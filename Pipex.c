@@ -6,29 +6,15 @@
 /*   By: jibot <marvin@42.fr>                       +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2022/01/31 17:20:24 by jibot             #+#    #+#             */
-/*   Updated: 2022/04/08 17:00:26 by jibot            ###   ########.fr       */
+/*   Updated: 2022/04/11 19:04:06 by jibot            ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
-#include "./libft/libft.h"
-# include <sys/types.h>
-# include <sys/stat.h>
-# include <fcntl.h>
-
-typedef struct	s_pipex{
-	int	f_in;
-	int f_out;
-	int end[2];
-	char **path_split;
-	char **cmd1;
-	char **cmd2;
-	pid_t child_1;
-	pid_t child_2;
-}	t_pipex;
+#include "Pipex.h"
 
 void	child_1(t_pipex pipex, char **envp)
 {
-	int i;
+	int		i;
 	char	*cmd;
 
 	pipex.child_1 = fork();
@@ -41,9 +27,12 @@ void	child_1(t_pipex pipex, char **envp)
 		{
 			cmd = ft_strjoin(pipex.path_split[i], "/");
 			cmd = ft_strjoin(cmd, pipex.cmd1[0]);
-			execve(cmd, pipex.cmd2, envp);
+			if (!access(cmd, X_OK))
+				execve(cmd, pipex.cmd1, envp);
 			i++;
 		}
+		write (2, "command does not exist !\n", 25);
+		exit (1);
 	}
 	else
 		waitpid(pipex.child_1, NULL, 0);
@@ -51,7 +40,7 @@ void	child_1(t_pipex pipex, char **envp)
 
 void	child_2(t_pipex pipex, char **envp)
 {
-	int i;
+	int		i;
 	char	*cmd;
 
 	pipex.child_2 = fork();
@@ -64,47 +53,68 @@ void	child_2(t_pipex pipex, char **envp)
 		{
 			cmd = ft_strjoin(pipex.path_split[i], "/");
 			cmd = ft_strjoin(cmd, pipex.cmd2[0]);
-			execve(cmd, pipex.cmd2, envp);
+			if (!access(cmd, X_OK))
+				execve(cmd, pipex.cmd2, envp);
 			i++;
 		}
+		write (2, "command does not exist !\n", 25);
+		exit (1);
 	}
 	else
 		waitpid(pipex.child_2, NULL, 0);
 }
 
-void	get_paths(t_pipex *pipex, char **envp)
+int	get_paths(t_pipex *pipex, char **envp)
 {
 	int	i;
 
 	i = 0;
-	while (!ft_strnstr(envp[i], "PATH", 4))
-		i++;
+	while (ft_strncmp(envp[i], "PATH=", 5))
+	{
+		if (!envp[++i])
+		{
+			write(1, "PATH not found\n", 15);
+			return (0);
+		}
+	}
 	pipex->path_split = ft_split(envp[i] + 5, ':');
+	return (1);
 }
 
-int	err_handle(t_pipex *pipex, char **argv, int argc)
+int	err_handle(t_pipex *pipex, char **argv, int argc, char **envp)
 {
 	pipex->f_in = open(argv[1], O_RDONLY);
 	pipex->f_out = open(argv[argc - 1], O_CREAT | O_RDWR | O_TRUNC, 0000644);
 	if (pipex->f_in < 0 || pipex->f_out < 0)
 	{
-		write(1, "Error : Wrong file name", 23);
+		perror ("Error");
 		return (1);
+	}
+	if (argc != 5)
+	{
+		write(1, "Error : bad args input\n", 23);
+		return (2);
+	}
+	if (envp[0] == NULL)
+	{
+		write(1, "Error : no environment\n", 23);
+		return (3);
 	}
 	close(pipex->f_in);
 	close(pipex->f_out);
 	return (0);
 }
 
-int main (int argc, char **argv, char **envp)
+int	main(int argc, char **argv, char **envp)
 {
 	t_pipex	pipex;
 
 	pipex.cmd1 = ft_split(argv[2], ' ');
 	pipex.cmd2 = ft_split(argv[argc - 2], ' ');
-	get_paths(&pipex, envp);
-	if (err_handle(&pipex, argv, argc))
+	if (err_handle(&pipex, argv, argc, envp))
 		return (1);
+	if (!get_paths(&pipex, envp))
+		return (2);
 	pipex.f_in = open(argv[1], O_RDONLY);
 	pipex.f_out = open(argv[argc - 1], O_CREAT | O_RDWR | O_TRUNC, 0000644);
 	pipe(pipex.end);
